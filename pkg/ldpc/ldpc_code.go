@@ -1,10 +1,10 @@
 package ldpc
 
 import (
-	"../node"
+	"github.com/egs33/ldpc-codes-list-decoding/pkg/node"
 	"math/rand"
 	"time"
-) // TODO: replace with absolute path
+)
 
 type LDPCCode struct {
 	codeLength            int

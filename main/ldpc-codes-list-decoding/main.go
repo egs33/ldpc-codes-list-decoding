@@ -1,9 +1,9 @@
 package main
 
 import (
-	"../../pkg/channel"
-	"../../pkg/ldpc"
 	"fmt"
+	"github.com/egs33/ldpc-codes-list-decoding/pkg/channel"
+	"github.com/egs33/ldpc-codes-list-decoding/pkg/ldpc"
 )
 
 func main() {
