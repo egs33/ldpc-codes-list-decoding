@@ -48,8 +48,13 @@ func (node *VariableNode) ReceiveMessage(from int, message float64) {
 	node.receivedMessage[from] = message
 }
 
+// return LLR
+func (node VariableNode) Marginalize() float64 {
+	return node.CalcMessage(-1)
+}
+
 func (node VariableNode) EstimateSendBit() int {
-	llr := node.CalcMessage(-1)
+	llr := node.Marginalize()
 	if llr > 0 {
 		return 0
 	}
