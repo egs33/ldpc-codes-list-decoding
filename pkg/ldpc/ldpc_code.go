@@ -1,6 +1,7 @@
 package ldpc
 
 import (
+	"errors"
 	"github.com/egs33/ldpc-codes-list-decoding/pkg/node"
 	"math"
 	"math/rand"
@@ -124,11 +125,14 @@ func (code LDPCCode) GetRate() float64 {
 }
 
 /*
-Construct Random LDPC code.
-- (3, 6) regular
-- freeze bits if smaller information bit size
+Construct Random Regular LDPC code.
+Freeze and puncture bits if smaller information bit size
 */
-func ConstructCode(codeLength int, informationBitSize int) *LDPCCode {
+func ConstructCode(
+	codeLength int,
+	informationBitSize int,
+	variableNodeDegree int,
+	checkNodeDegree int) (*LDPCCode, error) {
 	code := new(LDPCCode)
 
 	code.codeLength = codeLength
@@ -136,10 +140,16 @@ func ConstructCode(codeLength int, informationBitSize int) *LDPCCode {
 		code.informationBitIndexes = append(code.informationBitIndexes, i)
 	}
 
-	for i := informationBitSize; i < codeLength/2; i++ {
+	originalRate := 1 - float64(variableNodeDegree)/float64(checkNodeDegree)
+
+	for i := informationBitSize; i < int(float64(codeLength)*originalRate); i++ {
 		code.frozenBitIndexes = append(code.frozenBitIndexes, i)
 	}
-	code.edges = createRandomEdges(codeLength)
+	var err error
+	code.edges, err = createRandomEdges(codeLength, variableNodeDegree, checkNodeDegree)
+	if err != nil {
+		return nil, err
+	}
 
 	code.variableNodes = make([]node.VariableNode, code.codeLength)
 	code.checkNodes = make([]node.CheckNode, code.codeLength/2)
@@ -154,27 +164,30 @@ func ConstructCode(codeLength int, informationBitSize int) *LDPCCode {
 		code.variableNodes[index].SetIsFrozen(true)
 	}
 
-	return code
+	return code, nil
 }
 
-func createRandomEdges(length int) []node.Edge {
+func createRandomEdges(length int, variableNodeDegree int, checkNodeDegree int) ([]node.Edge, error) {
+	if length*variableNodeDegree%checkNodeDegree != 0 {
+		return nil, errors.New("invalid length and degree")
+	}
 	rand.Seed(time.Now().UnixNano())
-	ret := make([]node.Edge, length*3)
+	ret := make([]node.Edge, length*variableNodeDegree)
 
-	temp := make([]int, length*3)
+	temp := make([]int, length*variableNodeDegree)
 	for i := range temp {
-		temp[i] = i / 3
+		temp[i] = i / variableNodeDegree
 	}
 	for i := 0; i < len(temp); i++ {
-		i1 := rand.Intn(length * 3)
+		i1 := rand.Intn(length * variableNodeDegree)
 		temp[i], temp[i1] = temp[i1], temp[i]
 	}
 	for k, v := range temp {
 		ret[k] = node.Edge{
 			VariableNodeIndex: v,
-			CheckNodeIndex:    k / 6,
+			CheckNodeIndex:    k / checkNodeDegree,
 		}
 	}
 
-	return ret
+	return ret, nil
 }
