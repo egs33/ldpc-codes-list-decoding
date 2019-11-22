@@ -19,6 +19,26 @@ type LDPCCode struct {
 
 const decodeIteration = 20
 
+// return whether all check node
+func (code LDPCCode) isSatisfyAllChecks() bool {
+	estimates := make([]int, code.codeLength)
+	for i, variableNode := range code.variableNodes {
+		estimates[i] = variableNode.EstimateSendBit()
+	}
+	checks := make([]int, len(code.checkNodes))
+	for _, edge := range code.edges {
+		checks[edge.CheckNodeIndex] += estimates[edge.VariableNodeIndex]
+	}
+
+	for _, c := range checks {
+		if c%2 != 0 {
+			return false
+		}
+	}
+	return true
+
+}
+
 func (code LDPCCode) executeMessagePassing(channelOutputs []float64) {
 	for i, _ := range code.variableNodes {
 		code.variableNodes[i].ChannelLLR = channelOutputs[i]
@@ -37,6 +57,9 @@ func (code LDPCCode) executeMessagePassing(channelOutputs []float64) {
 		for edgeIndex, edge := range code.edges {
 			message := code.variableNodes[edge.VariableNodeIndex].CalcMessage(edgeIndex)
 			code.checkNodes[edge.CheckNodeIndex].ReceiveMessage(edgeIndex, message)
+		}
+		if code.isSatisfyAllChecks() {
+			return
 		}
 	}
 }
