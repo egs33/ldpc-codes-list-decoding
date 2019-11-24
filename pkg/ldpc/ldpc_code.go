@@ -121,7 +121,16 @@ func (code LDPCCode) ListDecode(channelOutputs []float64, listSize int) [][]int 
 }
 
 func (code LDPCCode) GetRate() float64 {
-	return float64(len(code.informationBitIndexes)) / float64(code.codeLength-len(code.frozenBitIndexes))
+	return float64(len(code.informationBitIndexes)) / float64(code.GetRealCodeLength())
+}
+
+func (code LDPCCode) GetListRate(listSize int) float64 {
+	ambiguousBitCount := int(math.Floor(math.Log2(float64(listSize))))
+	return float64(len(code.informationBitIndexes) - ambiguousBitCount) / float64(code.GetRealCodeLength())
+}
+
+func (code LDPCCode) GetRealCodeLength() int {
+	return code.codeLength - len(code.frozenBitIndexes)
 }
 
 /*
@@ -129,30 +138,30 @@ Construct Random Regular LDPC code.
 Freeze and puncture bits if smaller information bit size
 */
 func ConstructCode(
-	codeLength int,
+	originalCodeLength int,
 	informationBitSize int,
 	variableNodeDegree int,
 	checkNodeDegree int) (*LDPCCode, error) {
 	code := new(LDPCCode)
 
-	code.codeLength = codeLength
+	code.codeLength = originalCodeLength
 	for i := 0; i < informationBitSize; i++ {
 		code.informationBitIndexes = append(code.informationBitIndexes, i)
 	}
 
-	originalRate := 1 - float64(variableNodeDegree)/float64(checkNodeDegree)
+	originalInfoBitSize := originalCodeLength - originalCodeLength*variableNodeDegree/checkNodeDegree
 
-	for i := informationBitSize; i < int(float64(codeLength)*originalRate); i++ {
+	for i := informationBitSize; i < originalInfoBitSize; i++ {
 		code.frozenBitIndexes = append(code.frozenBitIndexes, i)
 	}
 	var err error
-	code.edges, err = createRandomEdges(codeLength, variableNodeDegree, checkNodeDegree)
+	code.edges, err = createRandomEdges(originalCodeLength, variableNodeDegree, checkNodeDegree)
 	if err != nil {
 		return nil, err
 	}
 
-	code.variableNodes = make([]node.VariableNode, code.codeLength)
-	code.checkNodes = make([]node.CheckNode, code.codeLength/2)
+	code.variableNodes = make([]node.VariableNode, originalCodeLength)
+	code.checkNodes = make([]node.CheckNode, originalCodeLength*variableNodeDegree/checkNodeDegree)
 	for i := 0; i < len(code.variableNodes); i++ {
 		code.variableNodes[i] = node.NewVariableNode()
 	}
