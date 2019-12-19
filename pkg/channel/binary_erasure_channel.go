@@ -3,7 +3,6 @@ package channel
 import (
 	"math"
 	"math/rand"
-	"time"
 )
 
 type BinaryErasureChannel struct {
@@ -15,7 +14,6 @@ func NewBinaryErasureChannel(erasureProbability float64) BinaryErasureChannel {
 }
 
 func (bec BinaryErasureChannel) Channel(input []int) []float64 {
-	rand.Seed(time.Now().UnixNano())
 	output := make([]float64, len(input))
 
 	for index, bit := range input {

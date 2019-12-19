@@ -3,7 +3,6 @@ package channel
 import (
 	"math"
 	"math/rand"
-	"time"
 )
 
 type BinarySymmetricChannel struct {
@@ -15,7 +14,6 @@ func NewBinarySymmetricChannel(crossoverProbability float64) BinarySymmetricChan
 }
 
 func (bsc BinarySymmetricChannel) Channel(input []int) []float64 {
-	rand.Seed(time.Now().UnixNano())
 	output := make([]float64, len(input))
 	zeroLLR := math.Log((1 - bsc.crossoverProbability) / bsc.crossoverProbability)
 

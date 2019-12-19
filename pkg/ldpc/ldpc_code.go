@@ -18,13 +18,21 @@ type LDPCCode struct {
 	checkNodes            []node.CheckNode
 }
 
-const decodeIteration = 20
+const decodeIteration = 40
 
 // return whether all check node
 func (code LDPCCode) isSatisfyAllChecks() bool {
 	estimates := make([]int, code.codeLength)
 	for i, variableNode := range code.variableNodes {
-		estimates[i] = variableNode.EstimateSendBit()
+		llr := variableNode.Marginalize()
+		switch {
+		case llr == 0:
+			return false
+		case llr < 0:
+			estimates[i] = 0
+		case llr > 0:
+			estimates[i] = 1
+		}
 	}
 	checks := make([]int, len(code.checkNodes))
 	for _, edge := range code.edges {
@@ -126,7 +134,7 @@ func (code LDPCCode) GetRate() float64 {
 
 func (code LDPCCode) GetListRate(listSize int) float64 {
 	ambiguousBitCount := int(math.Floor(math.Log2(float64(listSize))))
-	return float64(len(code.informationBitIndexes) - ambiguousBitCount) / float64(code.GetRealCodeLength())
+	return float64(len(code.informationBitIndexes)-ambiguousBitCount) / float64(code.GetRealCodeLength())
 }
 
 func (code LDPCCode) GetRealCodeLength() int {
