@@ -5,8 +5,6 @@ import (
 	"github.com/egs33/ldpc-codes-list-decoding/pkg/node"
 	"math"
 	"math/rand"
-	"sort"
-	"time"
 )
 
 type LDPCCode struct {
@@ -16,113 +14,63 @@ type LDPCCode struct {
 	frozenBitIndexes      []int
 	variableNodes         []node.VariableNode
 	checkNodes            []node.CheckNode
+	decodingTreeNodes     []decodingTreeNode
 }
 
 const decodeIteration = 40
 
-// return whether all check node
-func (code LDPCCode) isSatisfyAllChecks() bool {
-	estimates := make([]int, code.codeLength)
-	for i, variableNode := range code.variableNodes {
-		llr := variableNode.Marginalize()
-		switch {
-		case llr == 0:
-			return false
-		case llr < 0:
-			estimates[i] = 0
-		case llr > 0:
-			estimates[i] = 1
-		}
-	}
-	checks := make([]int, len(code.checkNodes))
-	for _, edge := range code.edges {
-		checks[edge.CheckNodeIndex] += estimates[edge.VariableNodeIndex]
-	}
-
-	for _, c := range checks {
-		if c%2 != 0 {
-			return false
-		}
-	}
-	return true
-
-}
-
-func (code LDPCCode) executeMessagePassing(channelOutputs []float64) {
-	for i, _ := range code.variableNodes {
-		code.variableNodes[i].ChannelLLR = channelOutputs[i]
-	}
-
-	for i, edge := range code.edges {
-		message := code.variableNodes[edge.VariableNodeIndex].CalcInitialMessage()
-		code.checkNodes[edge.CheckNodeIndex].ReceiveMessage(i, message)
-	}
-
-	for i := 0; i < decodeIteration; i++ {
-		for edgeIndex, edge := range code.edges {
-			message := code.checkNodes[edge.CheckNodeIndex].CalcMessage(edgeIndex)
-			code.variableNodes[edge.VariableNodeIndex].ReceiveMessage(edgeIndex, message)
-		}
-		for edgeIndex, edge := range code.edges {
-			message := code.variableNodes[edge.VariableNodeIndex].CalcMessage(edgeIndex)
-			code.checkNodes[edge.CheckNodeIndex].ReceiveMessage(edgeIndex, message)
-		}
-		if code.isSatisfyAllChecks() {
-			return
-		}
-	}
-}
-
 func (code LDPCCode) Decode(channelOutputs []float64) []int {
-	code.executeMessagePassing(channelOutputs)
+	for i := range code.decodingTreeNodes[0].variableNodes {
+		code.decodingTreeNodes[0].variableNodes[i].ChannelLLR = channelOutputs[i]
+	}
+	code.decodingTreeNodes[0].executeBeliefPropagation(code.edges, decodeIteration)
 
 	decoded := make([]int, 0)
 	for _, index := range code.informationBitIndexes {
-		decoded = append(decoded, code.variableNodes[index].EstimateSendBit())
+		decoded = append(decoded, code.decodingTreeNodes[0].variableNodes[index].EstimateSendBit())
 	}
 
 	return decoded
 }
 
 func (code LDPCCode) ListDecode(channelOutputs []float64, listSize int) [][]int {
-	code.executeMessagePassing(channelOutputs)
+	for i := range code.decodingTreeNodes[0].variableNodes {
+		code.decodingTreeNodes[0].variableNodes[i].ChannelLLR = channelOutputs[i]
+	}
+	code.decodingTreeNodes[0].executeBeliefPropagation(code.edges, decodeIteration)
 	ambiguousBitCount := int(math.Floor(math.Log2(float64(listSize))))
 
-	llrs := make([]struct {
-		index int
-		llr   float64
-	}, 0)
-
-	for _, index := range code.informationBitIndexes {
-		llr := code.variableNodes[index].Marginalize()
-		llrs = append(llrs, struct {
-			index int
-			llr   float64
-		}{index: index, llr: llr})
-	}
-
-	sort.Slice(llrs, func(i, j int) bool {
-		return math.Abs(llrs[i].llr) < math.Abs(llrs[j].llr)
-	})
-
-	uniqueDecoded := make([]int, 0)
-	for _, index := range code.informationBitIndexes {
-		uniqueDecoded = append(uniqueDecoded, code.variableNodes[index].EstimateSendBit())
-	}
-
-	listDecoded := make([][]int, 1)
-	listDecoded[0] = uniqueDecoded
-
 	for i := 0; i < ambiguousBitCount; i++ {
-		llr := llrs[i]
-		temp := make([][]int, 0)
-		for _, v := range listDecoded {
-			inverted := make([]int, len(v))
-			copy(inverted, v)
-			inverted[llr.index] = 1 - inverted[llr.index]
-			temp = append(temp, inverted)
+		originalDecodingNodeSize := len(code.decodingTreeNodes)
+		for j := 0; j < originalDecodingNodeSize; j++ {
+			minLlrIndex := 0
+			minLlr := math.Inf(1)
+
+			for i, v := range code.decodingTreeNodes[0].variableNodes {
+				llr := math.Abs(v.Marginalize())
+				if minLlr > llr {
+					minLlr = llr
+					minLlrIndex = i
+				}
+			}
+
+			newNode := code.decodingTreeNodes[j].copy()
+			code.decodingTreeNodes[j].variableNodes[minLlrIndex].ChannelLLR = math.Inf(1)
+			newNode.variableNodes[minLlrIndex].ChannelLLR = math.Inf(-1)
+			code.decodingTreeNodes = append(code.decodingTreeNodes, newNode)
 		}
-		listDecoded = append(listDecoded, temp...)
+
+		for _, n := range code.decodingTreeNodes {
+			n.executeBeliefPropagation(code.edges, decodeIteration)
+		}
+	}
+	listDecoded := make([][]int, listSize)
+	for i, n := range code.decodingTreeNodes {
+		decoded := make([]int, len(code.informationBitIndexes))
+		for j, index := range code.informationBitIndexes {
+			decoded[j] = n.variableNodes[index].EstimateSendBit()
+		}
+		listDecoded[i] = decoded
 	}
 
 	return listDecoded
@@ -143,42 +91,31 @@ func (code LDPCCode) GetRealCodeLength() int {
 
 /*
 Construct Random Regular LDPC code.
-Freeze and puncture bits if smaller information bit size
 */
 func ConstructCode(
-	originalCodeLength int,
+	codeLength int,
 	informationBitSize int,
 	variableNodeDegree int,
 	checkNodeDegree int) (*LDPCCode, error) {
 	code := new(LDPCCode)
+	checkNodes := codeLength * variableNodeDegree / checkNodeDegree
+	code.decodingTreeNodes = []decodingTreeNode{newDecodingTreeNode(codeLength, checkNodes)}
 
-	code.codeLength = originalCodeLength
+	code.codeLength = codeLength
 	for i := 0; i < informationBitSize; i++ {
 		code.informationBitIndexes = append(code.informationBitIndexes, i)
 	}
-
-	originalInfoBitSize := originalCodeLength - originalCodeLength*variableNodeDegree/checkNodeDegree
-
-	for i := informationBitSize; i < originalInfoBitSize; i++ {
-		code.frozenBitIndexes = append(code.frozenBitIndexes, i)
-	}
 	var err error
-	code.edges, err = createRandomEdges(originalCodeLength, variableNodeDegree, checkNodeDegree)
+	code.edges, err = createRandomEdges(codeLength, variableNodeDegree, checkNodeDegree)
 	if err != nil {
 		return nil, err
 	}
 
-	code.variableNodes = make([]node.VariableNode, originalCodeLength)
-	code.checkNodes = make([]node.CheckNode, originalCodeLength*variableNodeDegree/checkNodeDegree)
 	for i := 0; i < len(code.variableNodes); i++ {
-		code.variableNodes[i] = node.NewVariableNode()
+		code.decodingTreeNodes[0].variableNodes[i] = node.NewVariableNode()
 	}
 	for i := 0; i < len(code.checkNodes); i++ {
-		code.checkNodes[i] = node.NewCheckNode()
-	}
-
-	for _, index := range code.frozenBitIndexes {
-		code.variableNodes[index].SetIsFrozen(true)
+		code.decodingTreeNodes[0].checkNodes[i] = node.NewCheckNode()
 	}
 
 	return code, nil
@@ -188,7 +125,6 @@ func createRandomEdges(length int, variableNodeDegree int, checkNodeDegree int) 
 	if length*variableNodeDegree%checkNodeDegree != 0 {
 		return nil, errors.New("invalid length and degree")
 	}
-	rand.Seed(time.Now().UnixNano())
 	ret := make([]node.Edge, length*variableNodeDegree)
 
 	temp := make([]int, length*variableNodeDegree)

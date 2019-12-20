@@ -38,3 +38,11 @@ func (node *CheckNode) ReceiveMessage(from int, message float64) {
 func (node *CheckNode) Clear() {
 	node.receivedMessage = map[int]float64{}
 }
+
+func (node *CheckNode) Copy() CheckNode {
+	newNode := CheckNode{receivedMessage: map[int]float64{}}
+	for k, v := range node.receivedMessage {
+		newNode.receivedMessage[k] = v
+	}
+	return newNode
+}
